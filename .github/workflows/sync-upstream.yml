@@ -1,0 +1,36 @@
+# 放到 fork 仓库的 .github/workflows/sync-upstream.yml
+# 作用：每天自动把 NM1688/YYB-Go-Enhanced 的 main 同步为上游 525815266/YYB-Go-Enhanced:main
+name: Sync upstream
+
+on:
+  schedule:
+    # GitHub cron 用 UTC 时间；UTC 21:00 = 北京时间次日 05:00
+    - cron: '0 21 * * *'
+  workflow_dispatch: {}   # 允许手动在 Actions 页面触发测试
+
+permissions:
+  contents: write          # merge-upstream 需要写权限，同步后会产生 push
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync fork from upstream (merge-upstream API)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "同步前 fork main 指向："
+          gh api /repos/NM1688/YYB-Go-Enhanced/branches/main --jq '.commit.sha'
+          echo "---"
+          # 调用 GitHub 官方 merge-upstream 端点，等价于网页上的 "Sync fork" 按钮
+          gh api -X POST /repos/NM1688/YYB-Go-Enhanced/merge-upstream \
+            -f branch='main' \
+            --jq '{merge_type: .merge_type, message: .message, base_branch: .base_branch}'
+          echo "---"
+          echo "同步后 fork main 指向："
+          gh api /repos/NM1688/YYB-Go-Enhanced/branches/main --jq '.commit.sha'
