@@ -7,6 +7,55 @@
 授权 code/加密包等调用形式。青龙不再直接订阅原仓库，防止更新覆盖适配层；配置、
 青龙任务统一使用 `task 525815266_YYB-Go-Enhanced/scripts/脚本名.py`，脚本由本仓库审核发布。
 
+## 青龙脚本拉取工具
+
+Issue #66 中出现的 `Tuple[Dict[str, str] ...`、`str) ->` 等任务名，不是脚本原本的名称。
+青龙自动添加任务时会在整个 Python 文件中宽泛搜索 `name:`，函数类型标注中的
+`account_name: str` 因此被误当成任务名。本仓库已为可订阅脚本补齐文件头部的
+`# name:` / `// name:` 元数据，并提供 [`tools/yyb-scriptctl.sh`](../tools/yyb-scriptctl.sh)
+把“下载脚本”和“创建任务”拆成明确的操作。
+
+先在青龙容器内安装管理工具：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/525815266/YYB-Go-Enhanced/main/tools/yyb-scriptctl.sh \
+  -o /ql/data/scripts/yyb-scriptctl.sh
+chmod +x /ql/data/scripts/yyb-scriptctl.sh
+```
+
+拉取整个 `scripts/` 目录，**不创建任务**：
+
+```bash
+bash /ql/data/scripts/yyb-scriptctl.sh sync
+```
+
+只拉取一个脚本，**不创建任务**：
+
+```bash
+bash /ql/data/scripts/yyb-scriptctl.sh pull 麦富迪_code版.py
+```
+
+拉取一个脚本并创建或更新青龙任务：
+
+```bash
+bash /ql/data/scripts/yyb-scriptctl.sh install 麦富迪_code版.py \
+  --cron "13 1 * * *" --name "麦富迪"
+```
+
+脚本头部已有 `# cron:` 时可以省略 `--cron`。没有 cron 元数据时，`install` 会完成下载
+但拒绝创建任务，必须由用户明确传入执行时间；不会再给所有脚本套用同一个随机时间。
+工具按完整任务命令查重，再次执行 `install` 会更新原任务的名称和 cron，不会重复创建。
+
+默认目录对应青龙订阅名 `525815266_YYB-Go-Enhanced_main`。如果实际目录不同，可设置：
+
+```bash
+export YYB_SCRIPT_DIR=/ql/data/scripts/你的仓库目录/scripts
+export YYB_TASK_PREFIX=你的仓库目录/scripts
+```
+
+不建议对整个仓库开启青龙的“自动添加任务”：部分脚本是公共模块或没有统一适用的执行时间。
+旧任务不会被 Git 拉取动作自动重命名，可对需要的脚本执行一次 `install` 更新，或删除旧任务后重建。
+
 本次同步的 3 个脚本：
 
 - `心相印_code版.py`：采用最新心相印 AppID 和恒安 `wxappLogin` 登录/签到接口，保留 token 缓存与备用后端。
@@ -51,14 +100,22 @@
 
 ## YYB 活动脚本
 
+- `哈啰出行签到.py`：哈啰出行 YYB 多账号版。自动登录和签到，独立查询普通宝箱、
+  上方“看视频免费骑车”、下方“看视频赚奖励金”以及普通任务奖励；按服务端返回的
+  周期、阶段和冷却信息停止，不把三个视频入口混成同一个任务，也不伪造广告播放。
+  对服务端已标记 `FINISHED` 的普通任务自动领取，并汇总开始余额、结束余额和净变化。
+  接口与上限核对过程见 `哈啰出行说明.md`。
+
 - `laichong_points.py`：莱充积分任务 YYB 版。默认使用 HAR 确认的 AppID
   `wxa68db1dabe823e7e`，自动签到，查询每日视频和每周分享进度，并领取服务端已经
-  标记完成但尚未领取的奖励。分享/视频完成后会二次刷新任务列表，避免接口延迟导致漏领。
+  标记完成但尚未领取的奖励。按 HAR 的 `task/complete` 请求逐次提交视频和分享任务，
+  每次核对服务端进度，到本期目标即停止；分享出现待领积分时调用 `task/claim`。
+  完成后会二次刷新任务列表，避免接口延迟导致漏领。
   登录后如果账号尚未绑定莱充手机号，会通过 YYB `/wxapp/getPhoneNumber` 获取真实的一次性
   手机号授权包，并调用莱充手机号绑定接口；授权包缺失或服务端未确认绑定时会明确跳过该账号。
-  每个账号输出积分前后差值；不会伪造视频播放或分享回调。
-  任务默认按 7 小时调度，`LAICHONG_TRY_VIDEO=1` / `LAICHONG_TRY_SHARE=1` 仅供
-  已在客户端真实完成任务后的接口兼容调试。
+  每个账号输出积分前后差值。任务默认按 7 小时调度；
+  `LAICHONG_TRY_VIDEO`、`LAICHONG_TRY_SHARE` 默认开启，`LAICHONG_TASK_DELAY` 默认 6 秒。
+  此模式只复现小程序的任务接口请求，不会实际播放微信广告或分享卡片；以服务端进度和积分为准。
 
 - `asdcb_auto_sign.py`：阿水大杯茶 YYB 版每日签到。每周二先按活动本期券模板 ID 查询个人券包，准确区分未使用/已使用/已过期；未领券时按小程序源码生成 `MD5` 签名和 AES-CBC/PKCS7 `data`。微信的 `getLatestUserKey` 属于小程序运行时本地能力，当前 YYB iLink 转发若返回 `invalid api_name (-12003)`，脚本会明确显示“未提交”，不会将顶层 `success` 或静态 `receiveStatus` 误报为领取结果。可用真实动态参数通过 `ASDCB_MEMBER_CLAIM_PAYLOAD` 覆盖。7.9 折券兑换通过 `ASDCB_ENABLE_79_COUPON=1` 显式开启，默认关闭。`--dry-run` 会在券包核验后直接跳过签到、领券和兑换，并在启动行明确标记查询模式。
 
