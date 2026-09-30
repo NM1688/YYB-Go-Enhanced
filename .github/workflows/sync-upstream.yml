@@ -1,5 +1,14 @@
 # 放到 fork 仓库的 .github/workflows/sync-upstream.yml
 # 作用：每天自动把 NM1688/YYB-Go-Enhanced 的 main 同步为上游 525815266/YYB-Go-Enhanced:main
+#
+# 2026-09-30 修订：
+#   1. 改用 PAT（secrets.SYNC_TOKEN）替代默认 GITHUB_TOKEN —— merge-upstream 端点
+#      实际要求 admin 权限，默认 token 只有 contents:write，会被 403 拒绝。
+#      PAT 需勾选 "Administration: Read and write" + "Contents: Read and write"。
+#   2. 增加「先比对、一致即跳过」的前置判断。此前连续两次失败的真实原因是
+#      fork 与上游已成分叉（merge base == 上游 HEAD，fork ahead 8 / behind 0），
+#      此时再调 merge-upstream 会返回 409，配合 set -euo pipefail 直接退出码 1。
+#   3. 失败时打印响应体，便于在 Actions 页面直接看到原因，不必再下载日志。
 name: Sync upstream
 
 on:
@@ -15,22 +24,52 @@ concurrency:
   group: sync-upstream
   cancel-in-progress: true
 
+env:
+  UPSTREAM: 525815266/YYB-Go-Enhanced
+  FORK: NM1688/YYB-Go-Enhanced
+
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
       - name: Sync fork from upstream (merge-upstream API)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 优先用 PAT；未配置时回退默认 token（权限可能不足，会给出明确提示）
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          echo "同步前 fork main 指向："
-          gh api /repos/NM1688/YYB-Go-Enhanced/branches/main --jq '.commit.sha'
-          echo "---"
-          # 调用 GitHub 官方 merge-upstream 端点，等价于网页上的 "Sync fork" 按钮
-          gh api -X POST /repos/NM1688/YYB-Go-Enhanced/merge-upstream \
-            -f branch='main' \
-            --jq '{merge_type: .merge_type, message: .message, base_branch: .base_branch}'
-          echo "---"
+
+          upstream_sha=$(gh api "/repos/${UPSTREAM}/branches/main" --jq '.commit.sha')
+          fork_sha=$(gh api "/repos/${FORK}/branches/main" --jq '.commit.sha')
+          echo "上游 ${UPSTREAM} main: ${upstream_sha}"
+          echo "Fork ${FORK} main: ${fork_sha}"
+
+          # 前置判断：fork 是否已包含上游 HEAD。若已包含，说明无新内容可同步。
+          # 注意：此时 fork 可能 "ahead"（有自己的 merge/ci 提交），属正常状态，
+          # 不应再向 merge-upstream 发请求（会 409 并让整个 job 失败）。
+          contains=$(gh api "/repos/${FORK}/compare/${upstream_sha}...main" \
+                       --jq '.status' 2>/dev/null || echo "unknown")
+          echo "fork 相对上游最新提交的状态: ${contains}"
+
+          if [ "${fork_sha}" = "${upstream_sha}" ] || [ "${contains}" = "ahead" ] || [ "${contains}" = "identical" ]; then
+            echo "✅ fork 已包含上游全部内容（status=${contains}），无需同步，正常退出。"
+            exit 0
+          fi
+
+          echo "上游有新提交，开始 merge-upstream..."
+
+          # 调用 GitHub 官方 merge-upstream 端点，等价于网页上的 "Sync fork" 按钮。
+          # 失败时把响应体打出来，避免只看得到一个 exit code 1。
+          resp=$(gh api -X POST "/repos/${FORK}/merge-upstream" \
+                   -f branch='main' 2>&1) || {
+            echo "::error::merge-upstream 调用失败，响应如下："
+            echo "${resp}"
+            echo "排查提示："
+            echo "  - HTTP 403 -> SYNC_TOKEN 未配置或缺少 Administration:Read and write 权限"
+            echo "  - HTTP 409 -> 存在冲突提交，需手动解决后再同步"
+            exit 1
+          }
+          echo "${resp}"
+
           echo "同步后 fork main 指向："
-          gh api /repos/NM1688/YYB-Go-Enhanced/branches/main --jq '.commit.sha'
+          gh api "/repos/${FORK}/branches/main" --jq '.commit.sha'
