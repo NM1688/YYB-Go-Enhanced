@@ -93,6 +93,37 @@ bash /ql/data/scripts/yyb-scriptctl.sh install 麦富迪_code版.py \
 
 `install` 未提供 cron 时会拒绝隐式创建，防止拉取动作意外产生错误任务。更多说明见[脚本管理](../scripts/README.md#青龙脚本拉取工具)。
 
+## 独立上传的脚本不在全部脚本里（Issue #73）
+
+“账号运行管理 → 全部脚本”从自动化面板的任务中读取脚本，且只匹配 `YYB_QINGLONG_REPO` 中的目录；它不是青龙文件管理器。**单独上传文件、只执行 `pull`，或任务命令的目录不匹配，都不会显示。**
+
+以单独上传 `example.py` 为例：
+
+1. 确认脚本支持通过 `YYB_SERVER` 读取账号。上传至青龙的 `local_yyb/example.py`（容器路径 `/ql/data/scripts/local_yyb/example.py`）。
+2. 在 YYB 服务的 `YYB_QINGLONG_REPO` 原值后追加 `,local_yyb`，保留已有目录，重建 / 重启 YYB 服务使配置生效。青龙任务里的环境变量不会改变 YYB 服务自身配置。
+3. 在青龙“定时任务”新建任务，命令为 `task local_yyb/example.py`，填写适合这个脚本的 Cron。若只希望 YYB 按账号执行，应将此原始任务设为**禁用**；禁用任务仍会被列出，避免它与 YYB 生成的账号任务重复执行。
+4. 回到 YYB“账号运行管理”，点击“刷新状态”，切换到“全部脚本”，搜索脚本名，为选中的账号配置 / 启用任务。
+
+也可直接上传到已配置的目录，此时无需修改 `YYB_QINGLONG_REPO`。这里的目录相对于青龙 `scripts` 目录，不能写成 `/ql/data/scripts`。文件名含空格、命令附带参数或 shell 包装的复杂命令不属于当前自动识别格式，请先用普通的 `task 目录/文件.py` 或 `.js` 命令。
+
+目录匹配仅代表脚本可被发现，不会自动把依赖其他 Cookie / Token 的脚本改造成 YYB 脚本。
+
+## 第三方脚本订阅与更新
+
+第三方仓库的文件更新由青龙「订阅管理」处理；YYB 继续读取面板任务。配置公开仓库 Git 地址、分支、文件筛选及拉库定时，手动运行订阅即可立即更新，不需要反复上传。
+
+例如 Issue #73 提到的 `lcmovie/YYB-GO-Script-i`，其 README 提供：
+
+```bash
+ql repo "https://github.com/lcmovie/YYB-GO-Script-i.git" "^wx-script/.*\.(js|py)$" "" "" "main" "js py"
+```
+
+在青龙订阅管理也可填写同样的地址、分支 `main`、白名单 `^wx-script/.*\.(js|py)$` 和后缀 `js py`。拉库定时例如 `0 */6 * * *`（每 6 小时），不等于脚本执行定时。
+
+拉库后，根据实际任务命令，把包含 `wx-script` 的目录追加到 YYB 的 `YYB_QINGLONG_REPO`，保留原有目录并重启 YYB。例如 `task lcmovie_YYB-GO-Script-i_main/wx-script/qqmusic.py` 对应 `lcmovie_YYB-GO-Script-i_main/wx-script`；是否带 `_main` 以实际目录为准。不要填写 GitHub 的 `/tree/main/...` 网页地址作为仓库地址。
+
+路径不变时，已有账号任务直接运行更新后的文件。如果只使用 YYB 账号任务，首次接入或新增脚本后，检查并禁用订阅生成的原始全局任务，避免重复运行。第三方仓库的筛选规则与业务接口由其作者维护，这里的订阅示例不代表已验证全部脚本的运行效果。
+
 ## 跨服务器排错
 
 请从实际执行脚本的容器内测试，不能只在浏览器中打开服务首页：

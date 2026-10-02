@@ -112,13 +112,31 @@ const path = require('node:path');
         assert.equal(await page.locator('#mobileAccountActions').count(),1,'one shared action bar');
       } else {
         assert.equal(await page.locator('#mobileAccountActions').isVisible(),false);
+        await page.locator('.account-card').nth(3).locator('[data-update-account]').click();
+        assert.match(await page.locator('#accountLinkDialogDescription').innerText(),/仅限 听雨/);
+        await page.locator('#accountLinkCancelBtn').click();
+        await page.locator('.account-card').first().locator('.account-select').click();
+        if (width === 1440) {
+          const cards = await page.locator('.account-card').evaluateAll(elements=>elements.slice(0,2).map(e=>{const r=e.getBoundingClientRect();return {top:r.top,left:r.left,height:r.height};}));
+          assert.equal(cards[0].top,cards[1].top,'desktop accounts use a card grid');
+          assert.ok(cards[1].left>cards[0].left,'cards sit side by side');
+          assert.ok(cards[0].height < 220,'cards stay compact');
+        }
       }
+      const pending = page.locator('.account-card').nth(1);
+      await pending.locator('.account-status-toggle').click();
+      assert.equal(await pending.locator('.account-confirm-actions').isVisible(),true);
+      assert.equal(await page.locator('#selectedAccountName').innerText(),'晨风','opening confirmation does not select the account');
+      await pending.locator('.account-status-toggle').click();
+      assert.equal(await pending.locator('.account-confirm-actions').isVisible(),false);
       if (process.env.YYB_SCREENSHOT_DIR && [1440,390].includes(width)) {
         await page.locator('h2').first().click();
+        await page.mouse.move(0,0);
         await page.waitForFunction(()=>[...document.querySelectorAll('.avatar img')].every(img=>img.complete));
         await page.screenshot({path:path.join(process.env.YYB_SCREENSHOT_DIR, `console-demo-${width}.png`)});
       }
     }
+    await page.locator('.account-card').nth(1).locator('.account-status-toggle').click();
     await page.locator('.account-card').nth(1).getByRole('button',{name:'仍有效',exact:true}).click();
     assert.equal(await page.locator('#selectedAccountName').innerText(),'晨风','confirmation must not change selection');
     await page.waitForFunction(()=>document.querySelectorAll('[data-confirm-status="alive"]').length===1);
@@ -129,6 +147,10 @@ const path = require('node:path');
       if (route.includes('view')) assert.equal(await page.locator('.platform-page-title').innerText(),'调用记录');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth > innerWidth+1),false,route);
     }
+    await page.goto(base+'/runs');
+    await page.locator('.script-help summary').click();
+    assert.match(await page.locator('.script-help').innerText(),/YYB_QINGLONG_REPO/);
+    assert.match(await page.locator('.script-help').innerText(),/禁用/);
     await context.route('**/api/auth/me',route=>route.fulfill(envelope({auth_enabled:true,user:{username:'演示用户',role:'user'}})));
     await page.goto(base+'/');
     await page.waitForFunction(()=>document.querySelector('.account-maintenance').hidden);

@@ -14,7 +14,7 @@
 
 ![账号工作台：搜索、状态筛选与有效期（全部为虚构演示数据）](docs/images/console-demo-1440.png)
 
-工作台支持昵称、备注、ID、OpenID 搜索和状态筛选。v0.2.20 起，手机选中账号即可在卡片下方更新扫码、管理代理和同步到面板；新增账号和新增链接位于列表顶部。卡片区随账号数量自然展开，已失效账号停止展示有效期倒计时。页面预览使用虚构账号。
+工作台支持昵称、备注、ID、OpenID 搜索和状态筛选。v0.2.22 使用紧凑卡片网格，电脑端可在卡片内直接更新扫码、管理代理；手机以单列卡片展示，选中账号后在其下方显示快捷操作。点击“待确认”可确认账号状态，新增账号和新增链接位于顶部。账号区随数量自然展开，已失效账号停止展示有效期倒计时。页面预览使用虚构账号。
 
 <p align="center">
   <img src="docs/images/scan-sync-mobile.png" alt="扫码成功后一键添加到青龙" width="32%">
@@ -113,6 +113,8 @@ bash /ql/data/scripts/yyb-scriptctl.sh install 麦富迪_code版.py \
 
 脚本来源、目录覆盖、任务去重和 Issue #66 的任务名修复说明见 [脚本管理文档](scripts/README.md#青龙脚本拉取工具)。
 
+手动上传的脚本不出现在“全部脚本”中？列表读取已配置目录内的**面板任务**，不是文件浏览器。请按[独立上传脚本接入步骤](docs/panel-integration.md#独立上传的脚本不在全部脚本里issue-73)配置目录、创建任务，再刷新列表。
+
 ## 调用协议接口
 
 `YYB_SERVER` 每行一个账号：
@@ -157,6 +159,8 @@ curl -X POST http://yyb-go:8000/wxapp/getCode \
 ## 更新
 
 管理员可点击控制台顶栏版本号检查新版本。系统会识别当前运行环境：Windows、Linux、macOS 裸机提供匹配架构的 Release 下载，Magisk 提供模块 ZIP；Docker 仅在维护执行器已连接时提供在线更新和重启。
+
+v0.2.23 增加官方 Release 备用查询，改善 Raw / API 同时失败时的版本检查。遇到连接重置或 403，请按[更新网络排错](docs/maintenance.md#检查更新报连接重置或-http-403issue-74)检查 YYB 容器出口；Docker 拉取镜像使用宿主机的独立网络配置。
 
 完整版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
